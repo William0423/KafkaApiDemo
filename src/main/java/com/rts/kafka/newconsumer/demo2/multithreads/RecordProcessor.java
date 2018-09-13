@@ -1,4 +1,4 @@
-package com.rts.kafka.newconsumer.multithreads;
+package com.rts.kafka.newconsumer.demo2.multithreads;
 
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;

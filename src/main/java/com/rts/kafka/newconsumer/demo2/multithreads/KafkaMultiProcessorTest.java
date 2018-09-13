@@ -1,7 +1,7 @@
-package com.rts.kafka.newconsumer.multithreads;
+package com.rts.kafka.newconsumer.demo2.multithreads;
 
 import com.google.common.collect.ImmutableMap;
-import com.rts.kafka.newconsumer.service.MsgReceiverThread;
+import com.rts.kafka.newconsumer.demo2.service.MsgReceiverThread;
 import org.apache.kafka.common.TopicPartition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

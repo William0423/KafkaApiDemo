@@ -1,4 +1,4 @@
-package com.rts.kafka.newconsumer.service;
+package com.rts.kafka.newconsumer.demo2.service;
 
 import org.apache.log4j.Logger;
 

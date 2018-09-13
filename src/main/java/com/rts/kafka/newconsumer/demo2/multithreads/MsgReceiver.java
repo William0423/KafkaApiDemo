@@ -1,6 +1,5 @@
-package com.rts.kafka.newconsumer.service;
+package com.rts.kafka.newconsumer.demo2.multithreads;
 
-import com.rts.kafka.newconsumer.multithreads.RecordProcessor;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -16,21 +15,20 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 
-public class MsgReceiverThread extends Daemon {
+public class MsgReceiver implements Runnable {
 
-    private static final Logger logger = LoggerFactory.getLogger(MsgReceiverThread.class);
+    private static final Logger logger = LoggerFactory.getLogger(MsgReceiver.class);
     private BlockingQueue<Map<TopicPartition, OffsetAndMetadata>> commitQueue = new LinkedBlockingQueue<Map<TopicPartition, OffsetAndMetadata>>();
     private Map<String, Object> consumerConfig;
     private String alarmTopic;
     private ConcurrentHashMap<TopicPartition, RecordProcessor> recordProcessorTasks;
     private ConcurrentHashMap<TopicPartition, Thread> recordProcessorThreads;
 
+    private boolean isStop = false;
 
-    public MsgReceiverThread(Map<String, Object> consumerConfig, String alarmTopic,
+    public MsgReceiver(Map<String, Object> consumerConfig, String alarmTopic,
                        ConcurrentHashMap<TopicPartition, RecordProcessor> recordProcessorTasks,
                        ConcurrentHashMap<TopicPartition, Thread> recordProcessorThreads) {
-
-        super("thread-name");
 
         this.consumerConfig = consumerConfig;
         this.alarmTopic = alarmTopic;
@@ -39,10 +37,7 @@ public class MsgReceiverThread extends Daemon {
 
     }
 
-
-    @Override
-    protected void runOneCycle() {
-
+    public void run() {
         //kafka Consumer是非线程安全的,所以需要每个线程建立一个consumer：外部一共创建了3个线程，所以需要有三个consumer
         KafkaConsumer<String, ByteBuffer> consumer = new KafkaConsumer<String, ByteBuffer>(consumerConfig);
 
@@ -53,8 +48,8 @@ public class MsgReceiverThread extends Daemon {
 //            while (!Thread.currentThread().isInterrupted()) {
             while (true) {
 
-                if (isStop.get()) {
-                    if (!commitQueue.isEmpty()) {
+                if (isStop) {
+                    if (!commitQueue.isEmpty() && commitQueue.size() > 0) {
                         for (int i= 0;i<commitQueue.size();i++) {
                             Map<TopicPartition, OffsetAndMetadata> toCommit = commitQueue.poll();
                             consumer.commitSync(toCommit);
@@ -68,18 +63,18 @@ public class MsgReceiverThread extends Daemon {
                     Map<TopicPartition, OffsetAndMetadata> toCommit = commitQueue.poll();
                     if (toCommit != null) {
                         logger.debug("commit TopicPartition offset to kafka: " + toCommit);
-                        consumer.commitSync(toCommit);
+//                        consumer.commitSync(toCommit);
                     }
 
 
                     //最多轮询100ms：消费kafka的数据，每次获得一批数据，对这批数据
                     ConsumerRecords<String, ByteBuffer> records = consumer.poll(100);
-
-                    if (records.isEmpty()) {
-                        continue;
-                    }
                     if (records.count() > 0) {
                         logger.debug("poll records size: " + records.count());
+                    }
+
+                    if (records.count()>0) {
+                        System.out.println("records.count() == " + records.count());
                     }
 
                     /**
@@ -87,9 +82,11 @@ public class MsgReceiverThread extends Daemon {
                      * 同一个线程下多个分区的的record放到同一个commitQueue中
                      */
                     for (final ConsumerRecord<String, ByteBuffer> record : records) {
+
                         String topic = record.topic();
                         int partition = record.partition();
                         TopicPartition topicPartition = new TopicPartition(topic, partition);
+
                         RecordProcessor recordProcessorTask = recordProcessorTasks.get(topicPartition);
 
                         //如果当前分区还没有开始消费, 则就没有消费任务在map中， 新创建一个task和一个线程
@@ -97,34 +94,29 @@ public class MsgReceiverThread extends Daemon {
 
                             //生成新的处理任务和线程, 然后将其放入对应的map中进行保存：初始化 queue
                             recordProcessorTask = new RecordProcessor(commitQueue);
+
                             recordProcessorTasks.put(topicPartition, recordProcessorTask);
-                            /**
-                             * 启动一个线程
-                             */
+
+
                             Thread thread = new Thread(recordProcessorTask);
                             thread.setName("Thread-for " + topicPartition.toString());
-                            logger.info("start a Thread: " + thread.getName());
+                            logger.info("start Thread: " + thread.getName());
                             thread.start();
                             recordProcessorThreads.put(topicPartition, thread);
-
                         }
 
                         //将消息放到 该分区对应task的queue中，进行处理： 在处理每条数据的同时，还会进一步的处理相关相关的offset
                         recordProcessorTask.addRecordToQueue(record);
 
                     }
-
                 } catch (Exception e) {
-
                     e.printStackTrace();
                     logger.warn("MsgReceiver exception " + e + " ignore it");
-
                 }
             }
         } finally {
             consumer.close();
         }
-
-
     }
+
 }
